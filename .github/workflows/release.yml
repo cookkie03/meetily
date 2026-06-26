@@ -96,16 +96,13 @@ jobs:
           - platform: "macos-latest" # for Apple Silicon only (M1 and above)
             args: "--target aarch64-apple-darwin"
             target: "aarch64-apple-darwin"
-          - platform: "windows-latest"
-            args: ""
-            target: "x86_64-pc-windows-msvc"
 
     uses: ./.github/workflows/build.yml
     with:
       platform: ${{ matrix.platform }}
       target: ${{ matrix.target }}
       build-args: ${{ matrix.args }}
-      sign-binaries: true
+      sign-binaries: false
       asset-prefix: "meetily"
       upload-artifacts: false  # tauri-action uploads directly to release
       release-id: ${{ needs.create-release.outputs.release-id }}
