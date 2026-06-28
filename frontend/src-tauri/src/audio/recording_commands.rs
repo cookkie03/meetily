@@ -840,6 +840,59 @@ pub async fn stop_recording<R: Runtime>(
             }
         }
 
+        if let Some(ref folder) = meeting_folder {
+            let folder_str = folder.to_string_lossy().to_string();
+            let app_handle = app.clone();
+            tokio::spawn(async move {
+                log::info!("Auto-diarization spawned for folder: {}", folder_str);
+                
+                // 1. Ensure diarization models are downloaded
+                if let Err(e) = crate::diarization::commands::ensure_diarization_models_internal(&app_handle).await {
+                    log::error!("Auto-diarization failed to ensure models: {}", e);
+                    return;
+                }
+                
+                // 2. Poll DB to find the meeting_id associated with this folder_path
+                let pool = match app_handle.try_state::<crate::state::AppState>() {
+                    Some(state) => state.db_manager.pool().clone(),
+                    None => {
+                        log::error!("Database pool not available for auto-diarization");
+                        return;
+                    }
+                };
+                
+                let mut meeting_id = None;
+                for _ in 0..60 {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                    match sqlx::query_scalar::<_, String>(
+                        "SELECT id FROM meetings WHERE folder_path = ?"
+                    )
+                    .bind(&folder_str)
+                    .fetch_optional(&pool)
+                    .await 
+                    {
+                        Ok(Some(id)) => {
+                            meeting_id = Some(id);
+                            break;
+                        }
+                        Ok(None) => {}
+                        Err(e) => {
+                            log::error!("Error querying meeting for auto-diarization: {}", e);
+                        }
+                    }
+                }
+                
+                if let Some(id) = meeting_id {
+                    log::info!("Auto-diarization: Found meeting_id {} for folder {}. Starting diarization...", id, folder_str);
+                    if let Err(e) = crate::diarization::commands::run_diarization_internal(&app_handle, &id).await {
+                        log::error!("Auto-diarization run failed: {}", e);
+                    }
+                } else {
+                    log::warn!("Auto-diarization: Timed out waiting for meeting to be saved in DB for folder: {}", folder_str);
+                }
+            });
+        }
+
         (meeting_folder, meeting_name)
     } else {
         info!("ℹ️ No recording manager available for cleanup");

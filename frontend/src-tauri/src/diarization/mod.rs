@@ -2,6 +2,7 @@ pub mod types;
 pub mod segmentation;
 pub mod embedding;
 pub mod clustering;
+pub mod commands;
 
 pub use types::{DiarizationSegment, SpeakerEmbedding, DiarizationConfig, DiarizationError};
 pub use segmentation::SegmentationEngine;

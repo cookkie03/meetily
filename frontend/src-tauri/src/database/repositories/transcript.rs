@@ -143,4 +143,18 @@ impl TranscriptsRepository {
             None => transcript.chars().take(200).collect(), // Fallback to the start of the transcript
         }
     }
+
+    /// Updates the speaker for a specific transcript segment.
+    pub async fn update_speaker(
+        pool: &SqlitePool,
+        id: &str,
+        speaker: Option<&str>,
+    ) -> Result<(), SqlxError> {
+        sqlx::query("UPDATE transcripts SET speaker = ? WHERE id = ?")
+            .bind(speaker)
+            .bind(id)
+            .execute(pool)
+            .await?;
+        Ok(())
+    }
 }
