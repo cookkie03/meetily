@@ -54,6 +54,8 @@ pub mod summary;
 pub mod tray;
 pub mod utils;
 pub mod whisper_engine;
+pub mod diarization;
+
 
 use audio::{list_audio_devices, AudioDevice, trigger_audio_permission};
 use log::{error as log_error, info as log_info};
@@ -748,6 +750,8 @@ pub fn run() {
             audio::import::start_import_audio_command,
             audio::import::cancel_import_command,
             audio::import::is_import_in_progress_command,
+            diarization::commands::run_diarization,
+            diarization::commands::rename_speaker,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

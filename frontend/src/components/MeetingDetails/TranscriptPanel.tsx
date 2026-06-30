@@ -1,10 +1,11 @@
 "use client";
 
 import { Transcript, TranscriptSegmentData } from '@/types';
-import { TranscriptView } from '@/components/TranscriptView';
 import { VirtualizedTranscriptView } from '@/components/VirtualizedTranscriptView';
 import { TranscriptButtonGroup } from './TranscriptButtonGroup';
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import { toast } from 'sonner';
 
 interface TranscriptPanelProps {
   transcripts: Transcript[];
@@ -61,8 +62,33 @@ export function TranscriptPanel({
       endTime: t.audio_end_time,
       text: t.text,
       confidence: t.confidence,
+      speaker: t.speaker,
     }));
   }, [transcripts, usePagination, segments]);
+
+  const handleRenameSpeaker = useCallback(async (oldLabel: string, newLabel: string) => {
+    if (!meetingId) {
+      throw new Error('Meeting ID is missing');
+    }
+
+    try {
+      await invoke('rename_speaker', {
+        meeting_id: meetingId,
+        old_label: oldLabel,
+        new_label: newLabel,
+      });
+
+      if (onRefetchTranscripts) {
+        await onRefetchTranscripts();
+      }
+
+      toast.success(`Renamed ${oldLabel} to ${newLabel}`);
+    } catch (error) {
+      console.error('Failed to rename speaker:', error);
+      toast.error('Failed to rename speaker');
+      throw error;
+    }
+  }, [meetingId, onRefetchTranscripts]);
 
   return (
     <div className="hidden md:flex md:w-1/4 lg:w-1/3 min-w-0 border-r border-gray-200 bg-white flex-col relative shrink-0">
@@ -94,6 +120,7 @@ export function TranscriptPanel({
           totalCount={totalCount}
           loadedCount={loadedCount}
           onLoadMore={onLoadMore}
+          onRenameSpeaker={handleRenameSpeaker}
         />
       </div>
 

@@ -7,6 +7,9 @@ import { useTranscriptStreaming } from "@/hooks/useTranscriptStreaming";
 import { ConfidenceIndicator } from "./ConfidenceIndicator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { RecordingStatusBar } from "./RecordingStatusBar";
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
 import { motion, AnimatePresence } from "framer-motion";
 import { TranscriptSegmentData } from "@/types";
 
@@ -34,6 +37,7 @@ export interface VirtualizedTranscriptViewProps {
     totalCount?: number;
     loadedCount?: number;
     onLoadMore?: () => void;
+    onRenameSpeaker?: (oldLabel: string, newLabel: string) => Promise<void> | void;
 }
 
 // Threshold for enabling virtualization (below this, use simple rendering)
@@ -63,39 +67,155 @@ function cleanStopWords(text: string): string {
     return cleanedText.replace(/\s+/g, ' ').trim();
 }
 
+const SPEAKER_BADGE_VARIANTS = [
+    "bg-sky-50 text-sky-700 ring-sky-200 hover:bg-sky-100",
+    "bg-emerald-50 text-emerald-700 ring-emerald-200 hover:bg-emerald-100",
+    "bg-amber-50 text-amber-700 ring-amber-200 hover:bg-amber-100",
+    "bg-rose-50 text-rose-700 ring-rose-200 hover:bg-rose-100",
+    "bg-violet-50 text-violet-700 ring-violet-200 hover:bg-violet-100",
+    "bg-cyan-50 text-cyan-700 ring-cyan-200 hover:bg-cyan-100",
+];
+
+function hashSpeakerLabel(label: string): number {
+    let hash = 0;
+    for (let i = 0; i < label.length; i += 1) {
+        hash = (hash * 31 + label.charCodeAt(i)) >>> 0;
+    }
+    return hash;
+}
+
+function getSpeakerBadgeClasses(label: string): string {
+    return SPEAKER_BADGE_VARIANTS[hashSpeakerLabel(label) % SPEAKER_BADGE_VARIANTS.length];
+}
+
 // Memoized transcript segment component
 const TranscriptSegment = memo(function TranscriptSegment({
     id,
     timestamp,
     text,
     confidence,
+    speaker,
     isStreaming,
     showConfidence,
+    onRenameSpeaker,
 }: {
     id: string;
     timestamp: number;
     text: string;
     confidence?: number;
+    speaker?: string | null;
     isStreaming: boolean;
     showConfidence: boolean;
+    onRenameSpeaker?: (oldLabel: string, newLabel: string) => Promise<void> | void;
 }) {
     const displayText = cleanStopWords(text) || (text.trim() === '' ? '[Silence]' : text);
+    const [renameOpen, setRenameOpen] = useState(false);
+    const [draftSpeaker, setDraftSpeaker] = useState(speaker ?? '');
+    const [isSavingSpeaker, setIsSavingSpeaker] = useState(false);
+
+    useEffect(() => {
+        if (!renameOpen) {
+            setDraftSpeaker(speaker ?? '');
+        }
+    }, [speaker, renameOpen]);
+
+    const handleRenameOpenChange = (open: boolean) => {
+        setRenameOpen(open);
+        if (open) {
+            setDraftSpeaker(speaker ?? '');
+        }
+    };
+
+    const handleSaveSpeaker = async () => {
+        if (!onRenameSpeaker || !speaker) return;
+
+        const nextLabel = draftSpeaker.trim();
+        if (!nextLabel || nextLabel === speaker) {
+            setRenameOpen(false);
+            return;
+        }
+
+        setIsSavingSpeaker(true);
+        try {
+            await onRenameSpeaker(speaker, nextLabel);
+            setRenameOpen(false);
+        } finally {
+            setIsSavingSpeaker(false);
+        }
+    };
+
+    const speakerBadge = speaker ? (
+        onRenameSpeaker ? (
+            <Popover open={renameOpen} onOpenChange={handleRenameOpenChange}>
+                <PopoverTrigger asChild>
+                    <button
+                        type="button"
+                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset transition-colors ${getSpeakerBadgeClasses(speaker)}`}
+                        title={`Rename ${speaker}`}
+                    >
+                        {speaker}
+                    </button>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-80 p-3">
+                    <div className="space-y-3">
+                        <div>
+                            <p className="text-sm font-medium text-gray-900">Rename speaker</p>
+                            <p className="text-xs text-gray-500">Current label: {speaker}</p>
+                        </div>
+                        <Input
+                            value={draftSpeaker}
+                            onChange={(e) => setDraftSpeaker(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    void handleSaveSpeaker();
+                                }
+                                if (e.key === 'Escape') {
+                                    setRenameOpen(false);
+                                }
+                            }}
+                            autoFocus
+                        />
+                        <div className="flex justify-end gap-2">
+                            <Button variant="ghost" size="sm" onClick={() => setRenameOpen(false)}>
+                                Cancel
+                            </Button>
+                            <Button
+                                size="sm"
+                                onClick={() => void handleSaveSpeaker()}
+                                disabled={isSavingSpeaker || !draftSpeaker.trim() || draftSpeaker.trim() === speaker}
+                            >
+                                {isSavingSpeaker ? 'Saving...' : 'Save'}
+                            </Button>
+                        </div>
+                    </div>
+                </PopoverContent>
+            </Popover>
+        ) : (
+            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${getSpeakerBadgeClasses(speaker)}`}>
+                {speaker}
+            </span>
+        )
+    ) : null;
 
     return (
         <div id={`segment-${id}`} className="mb-3">
             <div className="flex items-start gap-2">
-                <Tooltip>
-                    <TooltipTrigger>
-                        <span className="text-xs text-gray-400 mt-1 flex-shrink-0 min-w-[50px]">
-                            {formatRecordingTime(timestamp)}
-                        </span>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                        {confidence !== undefined && showConfidence && (
-                            <ConfidenceIndicator confidence={confidence} showIndicator={showConfidence} />
-                        )}
-                    </TooltipContent>
-                </Tooltip>
+                <div className="flex flex-col items-start gap-1 flex-shrink-0 min-w-[74px]">
+                    <Tooltip>
+                        <TooltipTrigger>
+                            <span className="text-xs text-gray-400 mt-1 flex-shrink-0 min-w-[50px]">
+                                {formatRecordingTime(timestamp)}
+                            </span>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                            {confidence !== undefined && showConfidence && (
+                                <ConfidenceIndicator confidence={confidence} showIndicator={showConfidence} />
+                            )}
+                        </TooltipContent>
+                    </Tooltip>
+                    {speakerBadge}
+                </div>
                 <div className="flex-1">
                     {isStreaming ? (
                         <div className="bg-gray-100 border border-gray-200 rounded-lg px-3 py-2">
@@ -124,6 +244,7 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
     totalCount = 0,
     loadedCount = 0,
     onLoadMore,
+    onRenameSpeaker,
 }) => {
     // Create scroll ref first - shared between virtualizer and auto-scroll hook
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -294,8 +415,10 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
                                         timestamp={segment.timestamp}
                                         text={getDisplayText(segment)}
                                         confidence={segment.confidence}
+                                        speaker={segment.speaker}
                                         isStreaming={isStreaming}
                                         showConfidence={showConfidence}
+                                        onRenameSpeaker={onRenameSpeaker}
                                     />
                                 </div>
                             );
@@ -350,8 +473,10 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
                                         timestamp={segment.timestamp}
                                         text={getDisplayText(segment)}
                                         confidence={segment.confidence}
+                                        speaker={segment.speaker}
                                         isStreaming={isStreaming}
                                         showConfidence={showConfidence}
+                                        onRenameSpeaker={onRenameSpeaker}
                                     />
                                 </motion.div>
                             );
