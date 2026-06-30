@@ -751,6 +751,7 @@ pub fn run() {
             audio::import::cancel_import_command,
             audio::import::is_import_in_progress_command,
             diarization::commands::run_diarization,
+            diarization::commands::rename_speaker,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

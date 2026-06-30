@@ -345,3 +345,35 @@ pub async fn run_diarization<R: tauri::Runtime>(
 
     Ok(())
 }
+
+/// Rename a speaker label across all transcript segments for a meeting.
+#[tauri::command]
+pub async fn rename_speaker<R: tauri::Runtime>(
+    app: AppHandle<R>,
+    meeting_id: String,
+    old_label: String,
+    new_label: String,
+) -> Result<(), String> {
+    let app_state = app.try_state::<AppState>()
+        .ok_or_else(|| "App state not available".to_string())?;
+    let pool = app_state.db_manager.pool();
+
+    sqlx::query(
+        "UPDATE transcripts SET speaker = ? WHERE meeting_id = ? AND speaker = ?",
+    )
+    .bind(&new_label)
+    .bind(&meeting_id)
+    .bind(&old_label)
+    .execute(pool)
+    .await
+    .map_err(|e| format!("Failed to rename speaker: {}", e))?;
+
+    log::info!(
+        "Renamed speaker '{}' to '{}' for meeting {}",
+        old_label,
+        new_label,
+        meeting_id
+    );
+
+    Ok(())
+}
